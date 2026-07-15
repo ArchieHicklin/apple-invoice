@@ -34,6 +34,16 @@ struct NightView: View {
 
             Spacer()
 
+            Label(
+                store.sensingActive
+                    ? "Auto-detecting sleep and wakes (mic + motion) — no taps needed"
+                    : "Auto-detection off (mic unavailable) — using your Oura estimate; buttons below are the fallback",
+                systemImage: store.sensingActive ? "waveform" : "waveform.slash"
+            )
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal)
+
             if store.phase == .sleeping {
                 Button {
                     store.reportAwake()

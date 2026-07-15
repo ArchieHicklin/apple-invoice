@@ -77,7 +77,21 @@ Oura Ring has **no alarm capability at all** — no vibration motor usable for a
 | Local notifications instead of AlarmKit | Muted by silent/Focus, 30s max sound — fails the "must wake you" requirement |
 | Android first | AlarmManager is equally capable, but user is on iOS; AlarmKit now closes the gap |
 
-## 5. Sources
+## 5. Round-2 corrections and additions (post-challenge research)
+
+The first version of this document overstated two things; a second research pass corrected them:
+
+### 5.1 "No live data from the ring" needs nuance
+- **Via the official API: confirmed, truly nothing mid-night.** Sleep sessions are processed cloud-side after sync; Oura→Apple Health export also only happens **when the Oura app is opened**, so HealthKit is not a live side-channel either. A third-party app cannot force the Oura app to sync (no URL scheme/intent for it, and iOS apps can't wake other apps).
+- **Via Bluetooth directly: live data DOES exist.** The [open_oura](https://github.com/Th0rgal/open_oura) project (Rust, Gen 3/4/5) has reverse-engineered the ring's BLE protocol: live heart rate (beat-to-beat IBI), latest SpO2, and the ring's **on-device sleep-stage events** from its history stream — completely locally, no cloud. Caveats that keep it out of v1: research-stage with no releases; requires extracting the 16-byte pairing key; unclear coexistence with the official Oura app's BLE connection; per-connection encrypted protocol that Oura can change at any firmware update. It is the correct **v2 path to true, tap-free, ring-grade wake detection** and is now the top item on the roadmap.
+
+### 5.2 Mid-night wake detection must not require taps
+Requiring a sleepy user to tap "I'm awake / back to sleep" was a design error. The corrected design keeps the app alive overnight the way Sleep Cycle does (audio background mode, phone charging) and senses wakes automatically by fusing three phone-side signals per 30s epoch: microphone RMS (movement/rustling), accelerometer, and unambiguous interaction events (device unlock, app foregrounding). Sustained quiet → onset (also replacing the latency *estimate* with a *measurement*); sustained activity or any device interaction → wake; sustained quiet again → back to sleep, crediting the exact span. Sleep Cycle has shipped this model at scale for a decade, and touchscreen-interaction research ([npj Digital Medicine](https://www.nature.com/articles/s41746-019-0147-4)) confirms phone interactions are a strong sleep/wake boundary signal. The taps remain only as a manual fallback when the mic permission is denied.
+
+### 5.3 Estimation still matters, but as prior + fallback
+With sensing in place the personalized Oura latency estimate becomes (a) the initial alarm position before onset is measured, (b) the whole mechanism when sensing is unavailable, and (c) part of the morning recalibration loop against Oura's ground truth. The floor/ceiling guarantees are unchanged and still bound everything.
+
+## 6. Sources
 - [Oura API v2 documentation](https://api.ouraring.com/v2/docs)
 - [Oura Member Care — The Oura API](https://support.ouraring.com/hc/en-us/articles/4415266939155-The-Oura-API)
 - [Open Wearables — Oura API: Accessing Ring Data, Sleep, HRV and Readiness](https://openwearables.io/blog/oura-api-accessing-ring-data-sleep-hrv-readiness) (data cadence, webhook ~30s-after-sync, morning availability)

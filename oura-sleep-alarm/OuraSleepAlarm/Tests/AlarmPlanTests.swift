@@ -49,6 +49,33 @@ final class AlarmPlanTests: XCTestCase {
         XCTAssertLessThanOrEqual(plan.fireDate, plan.ceilingDate)
     }
 
+    func testMeasuredOnsetOverridesEstimate() {
+        var plan = makePlan(latency: 15 * 60)
+        let onset = plan.startedAt.addingTimeInterval(22 * 60)
+        plan.recordMeasuredOnset(onset)
+        XCTAssertEqual(plan.fireDate, onset.addingTimeInterval(7 * 3600))
+    }
+
+    func testMeasuredOnsetBeforeStartIsIgnored() {
+        var plan = makePlan()
+        plan.recordMeasuredOnset(plan.startedAt.addingTimeInterval(-600))
+        XCTAssertNil(plan.measuredOnsetAt)
+    }
+
+    func testLateMeasuredOnsetStillClampedToCeiling() {
+        var plan = makePlan()
+        plan.recordMeasuredOnset(plan.startedAt.addingTimeInterval(5 * 3600))
+        XCTAssertLessThanOrEqual(plan.fireDate, plan.ceilingDate)
+    }
+
+    func testSensedWakeCreditsExactSpanWithoutAllowance() {
+        var plan = makePlan()
+        let wakeStart = plan.startedAt.addingTimeInterval(3 * 3600)
+        plan.beginReportedWake(at: wakeStart)
+        plan.endReportedWake(at: wakeStart.addingTimeInterval(20 * 60), includeReOnsetAllowance: false)
+        XCTAssertEqual(plan.reportedAwakeCredit, 20 * 60, accuracy: 1)
+    }
+
     func testDoubleBeginWakeIsIgnored() {
         var plan = makePlan()
         let t0 = plan.startedAt.addingTimeInterval(3600)

@@ -35,6 +35,10 @@ Requires **Xcode 26+ / iOS 26+** (AlarmKit) and a physical device or simulator o
    ```xml
    <key>NSAlarmKitUsageDescription</key>
    <string>Schedules your wake-up alarm based on your target sleep duration.</string>
+   <key>NSMicrophoneUsageDescription</key>
+   <string>Listens for movement sounds overnight to detect when you fall asleep and when you wake, so the alarm adapts automatically. Audio is analysed on-device and never recorded.</string>
+   <key>UIBackgroundModes</key>
+   <array><string>audio</string></array>
    ```
 3. Run on device. On first Start Sleep, iOS will prompt for alarm permission.
 4. In Settings (gear icon), paste an Oura **Personal Access Token** from <https://cloud.ouraring.com/personal-access-tokens>. Without one the app still works with conservative defaults (15 min assumed latency).

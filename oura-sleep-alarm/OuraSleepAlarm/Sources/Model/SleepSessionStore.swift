@@ -21,6 +21,8 @@ final class SleepSessionStore: ObservableObject {
     @Published var lastStatsError: String?
 
     let scheduler: AlarmScheduler
+    let sensing = NightSensingEngine()
+    @Published var sensingActive = false
     private let defaults = UserDefaults.standard
 
     private var ouraClient: OuraClient {
@@ -50,6 +52,42 @@ final class SleepSessionStore: ObservableObject {
         plan = newPlan
         phase = .sleeping
         persist()
+        startSensing()
+    }
+
+    /// Overnight sensing (mic + motion + interaction events) measures onset
+    /// and mid-night wakes automatically — no taps needed. Failure to start
+    /// (mic permission denied, etc.) degrades to estimate-only; the alarms
+    /// are already scheduled either way.
+    private func startSensing() {
+        sensing.onEvent = { [weak self] event in
+            guard let self else { return }
+            Task { @MainActor in await self.handleSensingEvent(event) }
+        }
+        do {
+            try sensing.start()
+            sensingActive = true
+        } catch {
+            sensingActive = false
+        }
+    }
+
+    private func handleSensingEvent(_ event: NightSensingEngine.Event) async {
+        guard var p = plan else { return }
+        switch event {
+        case .onsetDetected(let date):
+            p.recordMeasuredOnset(date)
+        case .wakeDetected(let date):
+            p.beginReportedWake(at: date)
+            phase = .reportedAwake
+        case .backToSleepDetected(let date):
+            p.endReportedWake(at: date, includeReOnsetAllowance: false)
+            phase = .sleeping
+        }
+        plan = p
+        persist()
+        // Best-effort: on failure the previously scheduled alarms remain.
+        try? await scheduler.schedule(for: p)
     }
 
     /// User woke mid-night and opened the app / tapped "I'm awake".
@@ -75,6 +113,8 @@ final class SleepSessionStore: ObservableObject {
 
     /// User got up for good / stopped the alarm.
     func endSession() {
+        sensing.stop()
+        sensingActive = false
         scheduler.cancelAll()
         plan = nil
         phase = .idle

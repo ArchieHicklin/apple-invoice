@@ -18,6 +18,10 @@ struct AlarmPlan: Codable, Equatable {
 
     /// Estimated sleep-onset latency at planning time.
     var estimatedLatency: TimeInterval
+    /// Onset measured live by the night-sensing engine (mic + motion +
+    /// interaction). When present it replaces the latency estimate.
+    /// Clamped so it can never push the alarm outside the window.
+    var measuredOnsetAt: Date?
     /// Awake credit baked in from history (capped).
     var priorAwakeCredit: TimeInterval
     /// Awake credit accumulated from user-reported mid-night wakes (capped).
@@ -35,9 +39,23 @@ struct AlarmPlan: Codable, Equatable {
     }
 
     /// The alarm fire time, always clamped into [floor, ceiling].
+    /// Prefers the measured onset (real signal) over the latency estimate.
     var fireDate: Date {
-        let raw = startedAt.addingTimeInterval(estimatedLatency + target + totalAwakeCredit)
+        let onsetDelay: TimeInterval
+        if let measured = measuredOnsetAt {
+            onsetDelay = max(0, measured.timeIntervalSince(startedAt))
+        } else {
+            onsetDelay = estimatedLatency
+        }
+        let raw = startedAt.addingTimeInterval(onsetDelay + target + totalAwakeCredit)
         return min(max(raw, floorDate), ceilingDate)
+    }
+
+    /// The sensing engine detected sleep onset. Ignored if it would move the
+    /// onset before the start tap; the ceiling clamp bounds late detections.
+    mutating func recordMeasuredOnset(_ date: Date) {
+        guard date >= startedAt else { return }
+        measuredOnsetAt = date
     }
 
     /// User reported being awake at `date` (e.g. opened the app mid-night).
@@ -46,14 +64,18 @@ struct AlarmPlan: Codable, Equatable {
         currentWakeStartedAt = date
     }
 
-    /// User is going back to sleep: credit the awake span plus a short
-    /// re-onset latency, both capped so the ceiling still holds.
-    mutating func endReportedWake(at date: Date = Date()) {
+    /// The wake ended: credit the awake span, capped so the ceiling holds.
+    /// `includeReOnsetAllowance` is true for manual reports ("back to sleep"
+    /// tapped while still awake — re-onset must be estimated) and false for
+    /// sensed events (the timestamp already IS the observed re-onset).
+    mutating func endReportedWake(at date: Date = Date(), includeReOnsetAllowance: Bool = true) {
         guard let wakeStart = currentWakeStartedAt else { return }
         currentWakeStartedAt = nil
-        let span = max(0, date.timeIntervalSince(wakeStart))
-        let reOnset = EstimatorBounds.reOnsetLatency.clamped(to: 0...EstimatorBounds.reOnsetLatencyCap)
-        reportedAwakeCredit = (reportedAwakeCredit + span + reOnset)
+        var span = max(0, date.timeIntervalSince(wakeStart))
+        if includeReOnsetAllowance {
+            span += EstimatorBounds.reOnsetLatency.clamped(to: 0...EstimatorBounds.reOnsetLatencyCap)
+        }
+        reportedAwakeCredit = (reportedAwakeCredit + span)
             .clamped(to: 0...EstimatorBounds.totalAwakeCreditCap)
     }
 }

@@ -52,7 +52,17 @@ Ceiling = `start + target + 45 min (latency cap) + 90 min (awake-credit cap)`. E
 4. **Apple Watch companion** (the single biggest accuracy upgrade): live HR + accelerometer enables true onset detection and automatic awake-time deduction, replacing the estimator with measurement while keeping the same AlarmPlan bounds as the safety net.
 5. **HealthKit ingestion** as a secondary history source when Oura history is thin.
 
-## 6. Final verdict
+## 6. Round-2 revision (after design challenge)
+
+Three challenges were raised against v1 and re-researched; the build was updated in response:
+
+1. **"Is there truly no live data?"** Via the official API and HealthKit: yes, truly nothing usable mid-night (HealthKit export only happens when the Oura app is opened; a third-party app cannot force an Oura sync). Via BLE directly: no — [open_oura](https://github.com/Th0rgal/open_oura) proves live HR and on-ring sleep-stage events are readable locally. It's research-grade (key extraction, firmware-fragile, unclear coexistence with the official app), so it's the flagged v2 path rather than the v1 foundation. Research doc §5.1 corrected accordingly.
+2. **"Tapping 'back to sleep' makes no sense."** Correct — replaced. `NightSensingEngine` now keeps the app alive overnight (audio background mode, Sleep Cycle's proven model) and detects onset, wakes, and re-sleep automatically from mic RMS + accelerometer + device-interaction events, with asymmetric hysteresis (2.5 min of activity to declare a wake, 7.5–10 min of quiet to declare sleep) so brief turn-overs never delay the alarm. Taps are now only the fallback when the mic is unavailable. Sensed events feed the same bounded `AlarmPlan`, so all three guarantees are untouched; if iOS kills the app, the pre-scheduled AlarmKit alarms still fire.
+3. **"Surely a better heuristic than latency."** The latency estimate is now demoted to prior/fallback: onset is *measured* when sensing runs (`recordMeasuredOnset`, new tests cover override, rejection of pre-start onsets, and ceiling clamping). The genuinely smarter tier — ring-grade live staging over BLE, or an Apple Watch — is the roadmap top; both slot into the same plan/bounds architecture.
+
+New empirical-test items: mic sensing thresholds need tuning against Oura's morning ground truth for 1–2 weeks; audio-session keep-alive behavior across Focus/interruptions (phone calls, other audio) needs on-device validation.
+
+## 7. Final verdict
 
 The solution meets the brief as well as the platform allows: one tap at bedtime, no clock-time alarm, personalized onset estimation, honest awake-time deduction for observable wakes, and — most importantly — hard, tested guarantees that the alarm fires within a known window and cannot silently fail. The primary residual risks are SDK-surface compile details and reboot behavior, both of which are one afternoon of on-device testing.
 
